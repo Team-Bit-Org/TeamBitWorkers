@@ -33,7 +33,10 @@ const sampleData = {
             "process": 50,
             "state": "wait",
             "url": {
-              "386031770216300555": "https://discordapp.com/channels/@me/888714310195499038/890191650826125313"
+              "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476442743107634"
+            },
+            "url2": {
+              "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
             }
           }],
           "from": "2021-09-07"
@@ -397,7 +400,7 @@ Discord.GuildMember.prototype.todo = async function(team, currentDate) {
   for (var addDate = -10; addDate <= 10; addDate++) {
     dateRange.push(currentDate.add(addDate));
   }
-  const myTasks = [].concat(...Object.keys(teams[team].projects).map(project => teams[team].projects[project].tasks.filter(task => task.members.includes(this.id)).map(task => ({
+  const myTasks = [].concat(...Object.keys(teams[team].projects).map(project => teams[team].projects[project].tasks.filter(task => task.state != "finish" && task.members.includes(this.id)).map(task => ({
     ...task,
     project
   }))));
@@ -419,12 +422,19 @@ ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
       `).addFields(...myTasks.map(task => ({
         name: task.title,
         value: `[${dateRange.reduce((string, date) => {
+          const progressPixel = Math.round(((new Date(task.until) - new Date(task.from)) / 86400000 + 1) * 8 / 100 * task.process);
           if (date.add(1).toString() == task.from) {
             return string + emojis.start;
           } else if (date.add(-1).toString() == task.until) {
             return string + emojis.end;
           } else if (task.from <= date.toString() && date.toString() <= task.until) {
-            return string + emojis.p0;
+            if (((date - new Date(task.from)) / 86400000 + 1) * 8 <= progressPixel) {
+              return string + emojis[task.state[0] + 8];
+            } else if (((date - new Date(task.from)) / 86400000) == Math.floor(progressPixel / 8)) {
+              return string + emojis[task.state[0] + (progressPixel - ((date - new Date(task.from)) / 86400000) * 8)];
+            } else {
+              return string + emojis.p0;
+            }
           } else {
             return string + emojis.space;
           }
@@ -870,6 +880,18 @@ client.on("interactionCreate", async interaction => {
             }
           }
           break;
+          case "previousTODO2":
+            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-7));
+            break;
+          case "previousTODO":
+            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-1));
+            break;
+          case "nextTODO":
+            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(1));
+            break;
+          case "nextTODO2":
+            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(7));
+            break;
       }
     }
   }
