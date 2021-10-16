@@ -38,6 +38,36 @@ const sampleData = {
             "url2": {
               "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
             }
+          }, {
+            "title": "그림",
+            "members": ["386031770216300555"],
+            "from": "2021-09-29",
+            "until": "2021-10-06",
+            "process": 50,
+            "state": "wait",
+            "url": {
+              "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476442743107634"
+            },
+            "url2": {
+              "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
+            }
+          }],
+          "from": "2021-09-07"
+        },
+        "몰라": {
+          "tasks": [{
+            "title": "기획",
+            "members": ["386031770216300555"],
+            "from": "2021-10-08",
+            "until": "2021-10-16",
+            "process": 30,
+            "state": "wait",
+            "url": {
+              "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476442743107634"
+            },
+            "url2": {
+              "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
+            }
           }],
           "from": "2021-09-07"
         }
@@ -339,36 +369,100 @@ Discord.User.prototype.product = Discord.GuildMember.prototype.product;
 
 Discord.GuildMember.prototype.schedule = async function(team, project, currentDate) {
   let dateRange = [];
-  for (var addDate = -10; addDate <= 10; addDate++) {
+  for (let addDate = -10; addDate <= 10; addDate++) {
     dateRange.push(currentDate.add(addDate));
+  }
+  let memberTasks = {};
+  for (let project2 in teams[team].projects) {
+    for (let task of teams[team].projects[project2].tasks) {
+      for (let member of task.members) {
+        if (memberTasks[member]) {
+          memberTasks[member].push(task);
+        } else {
+          memberTasks[member] = [task];
+        }
+      }
+    }
   }
   this.send({
     embeds: [
-      new Discord.MessageEmbed().setTitle("📅 **SCHEDULE**").setAuthor(project).setFooter(team).setDescription(`
+      new Discord.MessageEmbed().setTitle("😃 **MEMBERS**").setAuthor(project).setFooter(team).setDescription(`
 ${currentDate}
 ${(dateRange[0] <= today() && today() <= dateRange[20]) ? emojis.s8.repeat((today() - dateRange[0]) / 86400000) + "🔻" : emojis.s8.repeat(21)}
 ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
-      `).addFields(...teams[team].projects[project].tasks.map(task => ({
-        name: `${STATEEMOJI[task.state]} ${task.title} - _${task.process}%_`,
-        value: "[" + dateRange.reduce((string, date) => {
-          const progressPixel = Math.round(((new Date(task.until) - new Date(task.from)) / 86400000 + 1) * 8 / 100 * task.process);
-          if (date.add(1).toString() == task.from) {
-            return string + emojis.start
-          } else if (date.add(-1).toString() == task.until) {
-            return string + emojis.end
-          } else if (task.from <= date.toString() && date.toString() <= task.until) {
-            if (((date - new Date(task.from)) / 86400000 + 1) * 8 <= progressPixel) {
-              return string + emojis[task.state[0] + 8];
-            } else if (((date - new Date(task.from)) / 86400000) == Math.floor(progressPixel / 8)) {
-              return string + emojis[task.state[0] + (progressPixel - ((date - new Date(task.from)) / 86400000) * 8)];
-            } else {
-              return string + emojis.p0;
-            }
-          } else {
-            return string + emojis.space;
+      `).addFields(...Object.keys(memberTasks).map(worker => {
+        memberTasks[worker].sort((prevTask, nextTask) => prevTask.from <= nextTask.from ? -1 : 1);
+        const union = [{
+          from: memberTasks[worker][0].from,
+          until: memberTasks[worker][0].until,
+          processSum: (((new Date(memberTasks[worker][0].until) - new Date(memberTasks[worker][0].from)) / 86400000) + 1) / 100 * memberTasks[worker][0].process
+        }]
+        for (let task of memberTasks[worker].slice(1)) {
+          if (union[union.length - 1].until < new Date(task.from).add(-1).toString()) {
+            union.push({
+              from: task.from,
+              until: task.until,
+              processSum: (((new Date(task.until) - new Date(task.from)) / 86400000) + 1) / 100 * task.process
+            });
+          } else if (union[union.length - 1].until == new Date(task.from).add(-1).toString()) {
+            union[union.length - 1].until = task.until;
+            union[union.length - 1].processSum += (((new Date(task.until) - new Date(task.from)) / 86400000) + 1) / 100 * task.process;
           }
-        }, "") + `](${task.url[this.id]})`
-      })))
+          if (task.until > union[union.length - 1].until) {
+            union[union.length - 1].until = task.until;
+            union[union.length - 1].processSum += (((new Date(task.until) - new Date(task.from)) / 86400000) + 1) / 100 * task.process;
+          }
+        }
+        const progress = union.reduce((sum, bar) => sum + bar.processSum, 0) / union.reduce((sum, bar) => sum + ((new Date(bar.until) - new Date(bar.from)) / 86400000) + 1, 0) * 100;
+        return {
+          name: `${client.users.cache.get(worker)?.username} - ${Math.round(progress * 100) / 100}%`,
+          value: dateRange.reduce((string, date) => {
+            let resultChar = emojis.space;
+            for (let bar of union) {
+              if (date.add(1).toString() == bar.from) {
+                return string + (resultChar == emojis.end ? emojis.startend : emojis.start);
+              } else if (date.add(-1).toString() == bar.until) {
+                resultChar = emojis.end;
+              } else if (bar.from <= date.toString() && date.toString() <= bar.until) {
+                if (((date - new Date(bar.from)) / 86400000 + 1) <= bar.processSum) {
+                  return string + emojis.p8;
+                } else if (((date - new Date(bar.from)) / 86400000) == Math.floor(bar.processSum)) {
+                  return string + emojis["p" + Math.round(bar.processSum * 8 - ((date - new Date(bar.from)) / 86400000) * 8)];
+                } else {
+                  return string + emojis.p0;
+                }
+              }
+            }
+            return string + resultChar;
+          }, "")
+        }
+      })),
+      new Discord.MessageEmbed().setTitle("📅 **SCHEDULE**").setDescription(`
+${(dateRange[0] <= today() && today() <= dateRange[20]) ? emojis.s8.repeat((today() - dateRange[0]) / 86400000) + "🔻" : emojis.s8.repeat(21)}
+${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
+      `).addFields(...teams[team].projects[project].tasks.map(task => {
+        const progressPixel = Math.round(((new Date(task.until) - new Date(task.from)) / 86400000 + 1) * 8 / 100 * task.process);
+        return {
+          name: `${STATEEMOJI[task.state]} ${task.title} - _${task.process}%_`,
+          value: "[" + dateRange.reduce((string, date) => {
+            if (date.add(1).toString() == task.from) {
+              return string + emojis.start
+            } else if (date.add(-1).toString() == task.until) {
+              return string + emojis.end
+            } else if (task.from <= date.toString() && date.toString() <= task.until) {
+              if (((date - new Date(task.from)) / 86400000 + 1) * 8 <= progressPixel) {
+                return string + emojis[task.state[0] + 8];
+              } else if (((date - new Date(task.from)) / 86400000) == Math.floor(progressPixel / 8)) {
+                return string + emojis[task.state[0] + Math.round(progressPixel - ((date - new Date(task.from)) / 86400000) * 8)];
+              } else {
+                return string + emojis.p0;
+              }
+            } else {
+              return string + emojis.space;
+            }
+          }, "") + `](${task.url[this.id]})`
+        }
+      }))
     ],
     components: [
       new Discord.MessageActionRow().addComponents(
@@ -410,8 +504,7 @@ Discord.GuildMember.prototype.todo = async function(team, currentDate) {
         name: `${task.project} - ${task.title}`,
         value: `
 ${STATEEMOJI[task.state]} **${task.process}%**
-*${task.from}* ~ *${task.until}*
-
+*${task.from} ~ ${task.until}*
 ${task.description ?? "정보 없음"}
         `
       }))),
@@ -419,10 +512,11 @@ ${task.description ?? "정보 없음"}
 ${currentDate}
 ${(dateRange[0] <= today() && today() <= dateRange[20]) ? emojis.s8.repeat((today() - dateRange[0]) / 86400000) + "🔻" : emojis.s8.repeat(21)}
 ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
-      `).addFields(...myTasks.map(task => ({
-        name: task.title,
-        value: `[${dateRange.reduce((string, date) => {
-          const progressPixel = Math.round(((new Date(task.until) - new Date(task.from)) / 86400000 + 1) * 8 / 100 * task.process);
+      `).addFields(...myTasks.map(task => {
+        const progressPixel = Math.round(((new Date(task.until) - new Date(task.from)) / 86400000 + 1) * 8 / 100 * task.process);
+        return {
+          name: task.title,
+          value: `[${dateRange.reduce((string, date) => {
           if (date.add(1).toString() == task.from) {
             return string + emojis.start;
           } else if (date.add(-1).toString() == task.until) {
@@ -431,7 +525,7 @@ ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
             if (((date - new Date(task.from)) / 86400000 + 1) * 8 <= progressPixel) {
               return string + emojis[task.state[0] + 8];
             } else if (((date - new Date(task.from)) / 86400000) == Math.floor(progressPixel / 8)) {
-              return string + emojis[task.state[0] + (progressPixel - ((date - new Date(task.from)) / 86400000) * 8)];
+              return string + emojis[task.state[0] + Math.round(progressPixel - ((date - new Date(task.from)) / 86400000) * 8)];
             } else {
               return string + emojis.p0;
             }
@@ -439,7 +533,8 @@ ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
             return string + emojis.space;
           }
         }, "")}](${(task.url2?.[this.id])})`
-      })))
+        }
+      }))
     ],
     components: [
       new Discord.MessageActionRow().addComponents(
@@ -880,18 +975,18 @@ client.on("interactionCreate", async interaction => {
             }
           }
           break;
-          case "previousTODO2":
-            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-7));
-            break;
-          case "previousTODO":
-            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-1));
-            break;
-          case "nextTODO":
-            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(1));
-            break;
-          case "nextTODO2":
-            interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(7));
-            break;
+        case "previousTODO2":
+          interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-7));
+          break;
+        case "previousTODO":
+          interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-1));
+          break;
+        case "nextTODO":
+          interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(1));
+          break;
+        case "nextTODO2":
+          interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(7));
+          break;
       }
     }
   }
