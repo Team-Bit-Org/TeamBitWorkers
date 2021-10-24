@@ -18,10 +18,11 @@ const sampleData = {
     "ALPHA": {
       "password": "alpha",
       "managers": [
-        "386031770216300555"
+        "386031770216300555",
+        "457908455810924546"
       ],
       "workers": [
-        "386031770216300555"
+        "386031770216300555",
       ],
       "projects": {
         "대충 존나 쩌는 게임": {
@@ -82,10 +83,16 @@ const sampleData = {
         }
       }
     }
-  }
+  },
+  "tabs": {
+    "386031770216300555": {},
+    "457908455810924546": {}
+  },
+  "session": []
 };
 const data = sampleData;
 const teams = data.teams;
+const tabs = data.tabs;
 
 const Discord = require("discord.js");
 const interactionToken = new Date().valueOf().toString();
@@ -97,6 +104,7 @@ const client = new Discord.Client({
 let emojis = {};
 let sproutServer1;
 let sproutServer2;
+let channels;
 client.on("ready", async () => {
   console.log("READY");
   for (let emoji of [...client.emojis.cache.values()]) {
@@ -107,19 +115,26 @@ client.on("ready", async () => {
   emojis.f0 = emojis.p0;
   sproutServer1 = client.guilds.fetch("757598917801279488");
   sproutServer2 = client.guilds.fetch("890754725853691945");
-  for (let team in teams) {
-    for (let manager of teams[team].managers) {
-      (await client.users.cache.get(manager)?.send("ㅤ" + "\n".repeat(30) + "ㅤ")).channel.recipient.project(team, Object.keys(teams[team].projects)[0]);
-    }
-    for (let worker of teams[team].workers) {
-      if (teams[team].managers.includes(worker)) {
-        await client.users.cache.get(worker)?.todo(team, today());
-      } else {
-        (await client.users.cache.get(worker)?.send("ㅤ" + "\n".repeat(30) + "ㅤ")).channel.recipient.todo(team, today());
-      }
-    }
+  for (let user of Object.keys(tabs)) {
+    await client.users.cache.get(user).send("ㅤ");
   }
+  channels = client.channels.cache.filter(ch => ch.type == "DM");
+  console.log(await (channels.find(channel => channel.recipient.id == "386031770216300555").messages.fetch("asdf")));
 });
+Discord.MessageManager.prototype.oldFetch = Discord.MessageManager.prototype.fetch;
+Discord.MessageManager.prototype.fetch = function(id) {
+  if (id) {
+    return new Promise((resolve, reject) => {
+      this.oldFetch(id).then((message) => {
+        resolve(message);
+      }).catch((err) => {
+        resolve(undefined);
+      });
+    });
+  } else {
+    return undefined;
+  }
+}
 Discord.Channel.prototype.notice = async function(embed) {
   const m = await this.send({
     embeds: [embed]
@@ -167,28 +182,35 @@ const ChartJSImage = require("chart.js-image");
 
 Discord.GuildMember.prototype.project = async function(team, project) {
   if (Object.keys(teams[team].projects).length == 0) {
-    this.send({
+    if (!tabs[this.id][team]) {
+      tabs[this.id][team] = {};
+    }
+    tabs[this.id][team].managerUI = (await this.send({
       embeds: [
-        new Discord.MessageEmbed().setTitle("📝 **Projects**").setDescription("생성된 프로젝트가 없습니다.").setFooter(team)
+        new Discord.MessageEmbed().setTitle("📝 **PROJECTS**").setDescription("생성된 프로젝트가 없습니다.").setFooter(team)
       ],
       components: [
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "addProject").setLabel("➕ADD").setStyle("PRIMARY")
+          new Discord.MessageButton().setCustomId("addProject").setLabel("➕ADD").setStyle("PRIMARY")
         ),
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "projects").setLabel("📝PROJECTS").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "products").setLabel("📦PRODUCTS").setStyle("SECONDARY")
+          new Discord.MessageButton().setCustomId("projects").setLabel("📝PROJECTS").setStyle("PRIMARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("products").setLabel("📦PRODUCTS").setStyle("SECONDARY")
         )
       ]
-    });
+    })).id;
+    return true
   } else {
     const currentProject = teams[team].projects[project];
     const progress = currentProject.tasks.reduce((sum, task) => sum + ((new Date(task.until) - new Date(task.from)) / 86400000 + 1) / 100 * task.process, 0) / currentProject.tasks.reduce((sum, task) => sum + (new Date(task.until) - new Date(task.from)) / 86400000 + 1, 0) * 100;
     const startDay = new Date(currentProject.from);
     const endDay = new Date(currentProject.tasks.reduce((prev, next) => (prev > next.until ? prev : next.until), "0000-00-00"));
-    this.send({
+    if (!tabs[this.id][team]) {
+      tabs[this.id][team] = {};
+    }
+    tabs[this.id][team].managerUI = (await this.send({
       embeds: [
         new Discord.MessageEmbed().setTitle(`📈 **프로젝트 진행률** - _${Math.floor(progress * 100) / 100}%_`).setThumbnail(
           ChartJSImage().chart({
@@ -220,7 +242,7 @@ Discord.GuildMember.prototype.project = async function(team, project) {
           name: "예상 완료일",
           value: (startDay <= today()) ? new Date(new Date(startDay.toString()).setDate(startDay.getDate() + Math.ceil((((today() - startDay + 86400000) * 100 / progress) - 86400000) / 86400000))).toString() : "계산 불가"
         }).setAuthor(project).setFooter(team),
-        new Discord.MessageEmbed().setTitle(`📝 **Projects**`).addFields({
+        new Discord.MessageEmbed().setTitle(`📝 **PROJECTS**`).addFields({
           name: "🔵 진행중",
           value: currentProject.tasks.filter(task => task.state == "progress").length.toString(),
           inline: true
@@ -292,48 +314,56 @@ Discord.GuildMember.prototype.project = async function(team, project) {
       ],
       components: [
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "addProject").setLabel("➕ADD").setStyle("PRIMARY"),
-          new Discord.MessageButton().setCustomId(interactionToken + "deleteProject").setLabel("❌DELETE").setStyle("DANGER"),
-          new Discord.MessageButton().setCustomId(interactionToken + "finishProject").setLabel("✅FINISH").setStyle("SUCCESS")
+          new Discord.MessageButton().setCustomId("addProject").setLabel("➕ADD").setStyle("PRIMARY"),
+          new Discord.MessageButton().setCustomId("deleteProject").setLabel("❌DELETE").setStyle("DANGER"),
+          new Discord.MessageButton().setCustomId("finishProject").setLabel("✅FINISH").setStyle("SUCCESS")
         ),
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageSelectMenu().setCustomId(interactionToken + "projectList").setPlaceholder(project).addOptions(Object.keys(teams[team].projects).map((title) => ({
+          new Discord.MessageSelectMenu().setCustomId("projectList").setPlaceholder(project).addOptions(Object.keys(teams[team].projects).map((title) => ({
             label: title,
             value: title
           })))
         ),
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "projects").setLabel("📝PROJECTS").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "schedule").setLabel("📅SCHEDULE").setStyle("SECONDARY"),
-          new Discord.MessageButton().setCustomId(interactionToken + "finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "products").setLabel("📦PRODUCTS").setStyle("SECONDARY")
+          new Discord.MessageButton().setCustomId("projects").setLabel("📝PROJECTS").setStyle("PRIMARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("schedule").setLabel("📅SCHEDULE").setStyle("SECONDARY"),
+          new Discord.MessageButton().setCustomId("finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("products").setLabel("📦PRODUCTS").setStyle("SECONDARY")
         )
       ]
-    });
+    })).id;
+    return true;
   }
 };
 Discord.User.prototype.project = Discord.GuildMember.prototype.project;
 
 Discord.GuildMember.prototype.product = async function(team, product) {
   if (Object.keys(teams[team].products).length == 0) {
-    this.send({
+    if (!tabs[this.id][team]) {
+      tabs[this.id][team] = {};
+    }
+    tabs[this.id][team].managerUI = (await this.send({
       embeds: [
-        new Discord.MessageEmbed().setTitle("📦 **Products**").setDescription("등록된 제품이 없습니다.").setFooter(team)
+        new Discord.MessageEmbed().setTitle("📦 **PRODUCTS**").setDescription("등록된 제품이 없습니다.").setFooter(team)
       ],
       components: [
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "projects").setLabel("📝PROJECTS").setStyle("SECONDARY"),
-          new Discord.MessageButton().setCustomId(interactionToken + "community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "products").setLabel("📦PRODUCTS").setStyle("SECONDARY").setDisabled()
+          new Discord.MessageButton().setCustomId("projects").setLabel("📝PROJECTS").setStyle("SECONDARY"),
+          new Discord.MessageButton().setCustomId("community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("products").setLabel("📦PRODUCTS").setStyle("PRIMARY").setDisabled()
         )
       ]
-    });
+    })).id;
+    return true;
   } else {
     const currentProduct = teams[team].products[product];
-    this.send({
+    if (!tabs[this.id][team]) {
+      tabs[this.id][team] = {};
+    }
+    tabs[this.id][team].managerUI = (await this.send({
       embeds: [
-        new Discord.MessageEmbed().setTitle("📦 **Products**").setFooter(team).setAuthor(product).addFields({
+        new Discord.MessageEmbed().setTitle("📦 **PRODUCTS**").setFooter(team).setAuthor(product).addFields({
           name: "참여자",
           value: currentProduct.members.map(id => `<@!${id}>`).join(" ")
         }, {
@@ -346,28 +376,33 @@ Discord.GuildMember.prototype.product = async function(team, product) {
       ],
       components: [
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "editProduct").setLabel("✏️EDIT").setStyle("PRIMARY"),
-          new Discord.MessageButton().setCustomId(interactionToken + "deleteProduct").setLabel("❌DELETE").setStyle("DANGER")
+          new Discord.MessageButton().setCustomId("editProduct").setLabel("✏️EDIT").setStyle("PRIMARY"),
+          new Discord.MessageButton().setCustomId("deleteProduct").setLabel("❌DELETE").setStyle("DANGER")
         ),
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageSelectMenu().setCustomId(interactionToken + "productList").setPlaceholder(product).addOptions(Object.keys(teams[team].products).map((title) => ({
+          new Discord.MessageSelectMenu().setCustomId("productList").setPlaceholder(product).addOptions(Object.keys(teams[team].products).map((title) => ({
             label: title,
             value: title
           })))
         ),
         new Discord.MessageActionRow().addComponents(
-          new Discord.MessageButton().setCustomId(interactionToken + "projects").setLabel("📝PROJECTS").setStyle("SECONDARY"),
-          new Discord.MessageButton().setCustomId(interactionToken + "community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
-          new Discord.MessageButton().setCustomId(interactionToken + "products").setLabel("📦PRODUCTS").setStyle("SECONDARY").setDisabled()
+          new Discord.MessageButton().setCustomId("projects").setLabel("📝PROJECTS").setStyle("SECONDARY"),
+          new Discord.MessageButton().setCustomId("community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
+          new Discord.MessageButton().setCustomId("products").setLabel("📦PRODUCTS").setStyle("PRIMARY").setDisabled()
         )
       ]
-    });
+    })).id;
+    return true;
   }
 }
 Discord.User.prototype.product = Discord.GuildMember.prototype.product;
 
 Discord.GuildMember.prototype.schedule = async function(team, project, currentDate) {
+  if (!project) {
+    this.project(team, project);
+    return true;
+  }
   let dateRange = [];
   for (let addDate = -10; addDate <= 10; addDate++) {
     dateRange.push(currentDate.add(addDate));
@@ -384,9 +419,12 @@ Discord.GuildMember.prototype.schedule = async function(team, project, currentDa
       }
     }
   }
-  this.send({
+  if (!tabs[this.id][team]) {
+    tabs[this.id][team] = {};
+  }
+  tabs[this.id][team].managerUI = (await this.send({
     embeds: [
-      new Discord.MessageEmbed().setTitle("😃 **MEMBERS**").setAuthor(project).setFooter(team).setDescription(`
+      new Discord.MessageEmbed().setTitle("😃 **MEMBERS** (전체 프로젝트 기준)").setAuthor(project).setFooter(team).setDescription(`
 ${currentDate}
 ${(dateRange[0] <= today() && today() <= dateRange[20]) ? emojis.s8.repeat((today() - dateRange[0]) / 86400000) + "🔻" : emojis.s8.repeat(21)}
 ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
@@ -466,26 +504,27 @@ ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
     ],
     components: [
       new Discord.MessageActionRow().addComponents(
-        new Discord.MessageButton().setCustomId(interactionToken + "previousSchedule2").setLabel("◀️◀️").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "previousSchedule").setLabel("◀️").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "addTask").setLabel("➕ADD").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "nextSchedule").setLabel("▶️").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "nextSchedule2").setLabel("▶️▶️").setStyle("PRIMARY")
+        new Discord.MessageButton().setCustomId("previousSchedule2").setLabel("◀️◀️").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("previousSchedule").setLabel("◀️").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("addTask").setLabel("➕ADD").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("nextSchedule").setLabel("▶️").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("nextSchedule2").setLabel("▶️▶️").setStyle("PRIMARY")
       ),
       new Discord.MessageActionRow().addComponents(
-        new Discord.MessageSelectMenu().setCustomId(interactionToken + "projectList2").setPlaceholder(project).addOptions(Object.keys(teams[team].projects).map((title) => ({
+        new Discord.MessageSelectMenu().setCustomId("projectList2").setPlaceholder(project).addOptions(Object.keys(teams[team].projects).map((title) => ({
           label: title,
           value: title
         })))
       ),
       new Discord.MessageActionRow().addComponents(
-        new Discord.MessageButton().setCustomId(interactionToken + "projects").setLabel("📝PROJECTS").setStyle("SECONDARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "schedule").setLabel("🔄REFRESH").setStyle("SECONDARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
-        new Discord.MessageButton().setCustomId(interactionToken + "products").setLabel("📦PRODUCTS").setStyle("SECONDARY")
+        new Discord.MessageButton().setCustomId("projects").setLabel("📝PROJECTS").setStyle("SECONDARY"),
+        new Discord.MessageButton().setCustomId("schedule").setLabel("🔄REFRESH").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("finance").setLabel("🏦FINANCE").setStyle("SECONDARY").setDisabled(),
+        new Discord.MessageButton().setCustomId("products").setLabel("📦PRODUCTS").setStyle("SECONDARY")
       )
     ]
-  });
+  })).id;
+  return true;
 }
 Discord.User.prototype.schedule = Discord.GuildMember.prototype.schedule;
 
@@ -498,7 +537,10 @@ Discord.GuildMember.prototype.todo = async function(team, currentDate) {
     ...task,
     project
   }))));
-  this.send({
+  if (!tabs[this.id][team]) {
+    tabs[this.id][team] = {};
+  }
+  tabs[this.id][team].workerUI = (await this.send({
     embeds: [
       new Discord.MessageEmbed().setTitle("✅ **TODO**").setFooter(team).addFields(...myTasks.filter(task => task.from <= new Date().toString()).map(task => ({
         name: `${task.project} - ${task.title}`,
@@ -508,7 +550,7 @@ ${STATEEMOJI[task.state]} **${task.process}%**
 ${task.description ?? "정보 없음"}
         `
       }))),
-      new Discord.MessageEmbed().setTitle("🕒 **Schedule**").setDescription(`
+      new Discord.MessageEmbed().setTitle("🕒 **SCHEDULE**").setDescription(`
 ${currentDate}
 ${(dateRange[0] <= today() && today() <= dateRange[20]) ? emojis.s8.repeat((today() - dateRange[0]) / 86400000) + "🔻" : emojis.s8.repeat(21)}
 ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
@@ -538,30 +580,33 @@ ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
     ],
     components: [
       new Discord.MessageActionRow().addComponents(
-        new Discord.MessageButton().setCustomId(interactionToken + "previousTODO2").setLabel("◀️◀️").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "previousTODO").setLabel("◀️").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "todayTODO").setLabel("○").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "nextTODO").setLabel("▶️").setStyle("PRIMARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "nextTODO2").setLabel("▶️▶️").setStyle("PRIMARY")
+        new Discord.MessageButton().setCustomId("previousTODO2").setLabel("◀️◀️").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("previousTODO").setLabel("◀️").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("todayTODO").setLabel("○").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("nextTODO").setLabel("▶️").setStyle("PRIMARY"),
+        new Discord.MessageButton().setCustomId("nextTODO2").setLabel("▶️▶️").setStyle("PRIMARY")
       ),
       new Discord.MessageActionRow().addComponents(
-        new Discord.MessageButton().setCustomId(interactionToken + "todo").setLabel("✅TODO").setStyle("SECONDARY").setDisabled(),
-        new Discord.MessageButton().setCustomId(interactionToken + "tools").setLabel("🔧TOOLS").setStyle("SECONDARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "files").setLabel("📁FILES").setStyle("SECONDARY"),
-        new Discord.MessageButton().setCustomId(interactionToken + "community").setLabel("🌱COMMUNITY").setStyle("SECONDARY")
+        new Discord.MessageButton().setCustomId("todo").setLabel("✅TODO").setStyle("PRIMARY").setDisabled(),
+        new Discord.MessageButton().setCustomId("tools").setLabel("🔧TOOLS").setStyle("SECONDARY").setDisabled(),
+        new Discord.MessageButton().setCustomId("files").setLabel("📁FILES").setStyle("SECONDARY").setDisabled(),
+        new Discord.MessageButton().setCustomId("community").setLabel("🌱COMMUNITY").setStyle("SECONDARY").setDisabled()
       )
     ]
-  });
+  })).id;
+  return true;
 }
 Discord.User.prototype.todo = Discord.GuildMember.prototype.todo;
 
 client.on("interactionCreate", async interaction => {
-  await interaction.message.delete();
+  if (!interaction.message.deleted) {
+    await interaction.message.delete();
+  }
   const team = interaction.message.embeds[0].footer.text;
   const project = interaction.message.embeds[0].author?.name;
-  if (interaction.customId.startsWith(interactionToken)) {
+  if (!interaction.customId.startsWith(interactionToken)) {
     if (interaction.isSelectMenu()) {
-      switch (interaction.customId.slice(interactionToken.length)) {
+      switch (interaction.customId) {
         case "projectList":
           interaction.user.project(team, interaction.values[0]);
           break;
@@ -571,137 +616,11 @@ client.on("interactionCreate", async interaction => {
         case "projectList2":
           interaction.user.schedule(team, interaction.values[0], today());
           break;
-        case "workerList":
-          interaction.reply({
-            embeds: [
-              new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(`
-업무 시작일을 입력해주세요.
-예) ${new Date().toString()}
-생성을 취소하고 싶으신 경우 **취소**라고 입력해주세요.
-            `).setAuthor(project).setFooter(team).addFields({
-                name: "제목",
-                value: interaction.message.embeds[0].fields[0].value
-              }, {
-                name: "정보",
-                value: interaction.message.embeds[0].fields[1].value
-              }, {
-                name: "담당자",
-                value: interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "")
-              })
-            ]
-          });
-          const fromDate = (await interaction.channel.ask(m => m.author.id != "888657091093487648" && ((!isNaN(new Date(m.content).valueOf()) && today() <= new Date(m.content)) || m.content.replace(" ", "").replace("\n", "") == "취소"), 300000))?.replace("\n", "");
-          await interaction.deleteReply();
-          if (fromDate == undefined || fromDate.replace(" ", "") == "취소") {
-            await interaction.user.schedule(team, project, today());
-            interaction.channel.notice(
-              new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(
-                "업무 생성이 취소되었습니다."
-              ).setFooter(team)
-            );
-          } else {
-            const untilMessage = await interaction.followUp({
-              embeds: [
-                new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(`
-  업무 마감일을 입력해주세요.
-  예) ${new Date().toString()}
-  생성을 취소하고 싶으신 경우 **취소**라고 입력해주세요.
-              `).setAuthor(project).setFooter(team).addFields({
-                  name: "제목",
-                  value: interaction.message.embeds[0].fields[0].value
-                }, {
-                  name: "정보",
-                  value: interaction.message.embeds[0].fields[1].value
-                }, {
-                  name: "담당자",
-                  value: interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "")
-                }, {
-                  name: "시작일",
-                  value: new Date(fromDate).toString()
-                })
-              ]
-            });
-            const untilDate = (await interaction.channel.ask(m => m.author.id != "888657091093487648" && ((!isNaN(new Date(m.content).valueOf()) && new Date(fromDate) <= new Date(m.content)) || m.content.replace(" ", "").replace("\n", "") == "취소"), 300000))?.replace("\n", "");
-            await untilMessage.delete();
-            if (untilDate == undefined || untilDate.replace(" ", "") == "취소") {
-              await interaction.user.schedule(team, project, today());
-              interaction.channel.notice(
-                new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(
-                  "업무 생성이 취소되었습니다."
-                ).setFooter(team)
-              );
-            } else {
-              let url = {};
-              let url2 = {};
-              const memberString = interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "");
-              for (let manager of teams[team].managers) {
-                const reportMessage = await client.users.cache.get(manager)?.send({
-                  embeds: [
-                    new Discord.MessageEmbed().setTitle("📢 **Task Report**").setAuthor(project).setFooter(team).addFields({
-                      name: "업무",
-                      value: interaction.message.embeds[0].fields[0].value
-                    }, {
-                      name: "담당자",
-                      value: memberString
-                    }, {
-                      name: "보고사항",
-                      value: "아직까지 전송받은 보고사항이 없습니다."
-                    })
-                  ]
-                });
-                if (reportMessage != undefined) {
-                  url[manager] = reportMessage.url;
-                }
-              }
-              for (let worker of interaction.values) {
-                const orderMessage = await client.users.cache.get(worker)?.send({
-                  embeds: [
-                    new Discord.MessageEmbed().setTitle("📞 **Task Order**").setAuthor(project).setFooter(team).addFields({
-                      name: "업무",
-                      value: interaction.message.embeds[0].fields[0].value
-                    }, {
-                      name: "담당자",
-                      value: memberString
-                    }, {
-                      name: "시작일",
-                      value: new Date(fromDate).toString()
-                    }, {
-                      name: "마감일",
-                      value: new Date(untilDate).toString()
-                    }, {
-                      name: "정보",
-                      value: interaction.message.embeds[0].fields[1].value
-                    })
-                  ]
-                });
-                if (orderMessage != undefined) {
-                  url2[worker] = orderMessage.url;
-                }
-              }
-              teams[team].projects[project].tasks.push({
-                "title": interaction.message.embeds[0].fields[0].value,
-                "members": interaction.values,
-                "from": new Date(fromDate).toString(),
-                "until": new Date(untilDate).toString(),
-                "process": 0,
-                "state": "progress",
-                url,
-                url2
-              });
-              await interaction.user.schedule(team, project, today());
-              interaction.channel.notice(
-                new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(
-                  "업무가 성공적으로 생성되었습니다."
-                ).setFooter(team)
-              );
-            }
-          }
-          break;
       }
     } else if (interaction.isButton()) {
-      switch (interaction.customId.slice(interactionToken.length)) {
+      switch (interaction.customId) {
         case "projects":
-          if (interaction.message.embeds[0].title.includes("Schedule")) {
+          if (interaction.message.embeds[0].title.startsWith("😃")) {
             interaction.user.project(team, project);
           } else {
             interaction.user.project(team, Object.keys(teams[team].projects)[0]);
@@ -742,12 +661,30 @@ client.on("interactionCreate", async interaction => {
               tasks: [],
               from: new Date().toString()
             };
+            for (let manager of teams[team].managers) {
+              if (!tabs[manager][team]) {
+                tabs[manager][team] = {};
+              }
+              const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+              if (oldMessage) {
+                if (oldMessage.embeds[0].title.startsWith("📝")) {
+                  await oldMessage.delete();
+                  await client.users.cache.get(manager).project(team, title);
+                } else if (oldMessage.embeds[0].title.startsWith("📈")) {
+                  await oldMessage.delete();
+                  await client.users.cache.get(manager).project(team, oldMessage.embeds[0].author.name);
+                } else if (oldMessage.embeds[0].title.startsWith("😃")) {
+                  await oldMessage.delete();
+                  await client.users.cache.get(manager).schedule(team, oldMessage.embeds[0].author.name, today());
+                }
+              }
+            }
             await interaction.user.project(team, title);
             interaction.channel.notice(
               new Discord.MessageEmbed().setTitle("➕ **Add Project**").setDescription(
                 "프로젝트가 성공적으로 생성되었습니다."
               ).setFooter(team).setAuthor(title)
-            )
+            );
           }
           break;
         case "deleteProject":
@@ -764,23 +701,6 @@ client.on("interactionCreate", async interaction => {
               )
             ]
           });
-          break;
-        case "deleteProjectO":
-          delete teams[team].projects[project];
-          await interaction.user.project(team, Object.keys(teams[team].projects)[0]);
-          interaction.channel.notice(
-            new Discord.MessageEmbed().setTitle("❌ **Delete Project**").setDescription(
-              "프로젝트가 삭제되었습니다."
-            ).setFooter(team).setAuthor(project)
-          )
-          break;
-        case "deleteProjectX":
-          await interaction.user.project(team, project);
-          interaction.channel.notice(
-            new Discord.MessageEmbed().setTitle("❌ **Delete Project**").setDescription(
-              "프로젝트 삭제가 취소되었습니다."
-            ).setFooter(team).setAuthor(project)
-          )
           break;
         case "finishProject":
           interaction.reply({
@@ -818,30 +738,6 @@ client.on("interactionCreate", async interaction => {
             });
           }
           break;
-        case "finishProjectO":
-          teams[team].products[project] = {
-            members: [...new Set(teams[team].managers.concat(...teams[team].projects[project].tasks.map(task => task.members)))],
-            from: teams[team].projects[project].from,
-            until: new Date().toString(),
-            description: interaction.message.embeds[0].fields[0].value,
-            state: "private"
-          };
-          delete teams[team].projects[project];
-          await interaction.user.product(team, project);
-          interaction.channel.notice(
-            new Discord.MessageEmbed().setTitle("✅ **Finish Project**").setDescription(
-              "프로젝트가 등록되었습니다."
-            ).setFooter(team).setAuthor(project)
-          );
-          break;
-        case "finishProjectX":
-          await interaction.user.project(team, project);
-          interaction.channel.notice(
-            new Discord.MessageEmbed().setTitle("✅ **Finish Project**").setDescription(
-              "프로젝트 등록이 취소되었습니다."
-            ).setFooter(team).setAuthor(project)
-          );
-          break;
         case "editProduct":
           interaction.reply({
             embeds: [
@@ -862,6 +758,16 @@ client.on("interactionCreate", async interaction => {
           } else {
             teams[team].products[project].description = description;
             await interaction.user.product(team, project);
+            for (let manager of teams[team].managers) {
+              if (!tabs[manager][team]) {
+                tabs[manager][team] = {};
+              }
+              const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+              if (oldMessage && oldMessage.embeds[0].title.startsWith("📦") && oldMessage.embeds[0].author.name == project) {
+                await oldMessage.delete();
+                await client.users.cache.get(manager).product(team, project);
+              }
+            }
             interaction.channel.notice(
               new Discord.MessageEmbed().setTitle("✏️ **Edit Product**").setDescription(
                 "제품 정보가 수정되었습니다."
@@ -883,23 +789,6 @@ client.on("interactionCreate", async interaction => {
               )
             ]
           });
-          break;
-        case "deleteProductO":
-          delete teams[team].products[project];
-          await interaction.user.product(team, Object.keys(teams[team].products)[0]);
-          interaction.channel.notice(
-            new Discord.MessageEmbed().setTitle("❌ **Delete Product**").setDescription(
-              "제품이 삭제되었습니다."
-            ).setFooter(team).setAuthor(project)
-          )
-          break;
-        case "deleteProductX":
-          await interaction.user.product(team, project);
-          interaction.channel.notice(
-            new Discord.MessageEmbed().setTitle("❌ **Delete Product**").setDescription(
-              "제품 삭제가 취소되었습니다."
-            ).setFooter(team).setAuthor(project)
-          )
           break;
         case "previousSchedule2":
           interaction.user.schedule(team, project, new Date(interaction.message.embeds[0].description.split("\n")[0]).add(-7));
@@ -988,6 +877,318 @@ client.on("interactionCreate", async interaction => {
           interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(7));
           break;
       }
+    }
+  } else {
+    if (interaction.isSelectMenu()) {
+      switch (interaction.customId.slice(interactionToken.length)) {
+        case "workerList":
+          interaction.reply({
+            embeds: [
+              new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(`
+업무 시작일을 입력해주세요.
+예) ${new Date().toString()}
+생성을 취소하고 싶으신 경우 **취소**라고 입력해주세요.
+              `).setAuthor(project).setFooter(team).addFields({
+                name: "제목",
+                value: interaction.message.embeds[0].fields[0].value
+              }, {
+                name: "정보",
+                value: interaction.message.embeds[0].fields[1].value
+              }, {
+                name: "담당자",
+                value: interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "")
+              })
+            ]
+          });
+          const fromDate = (await interaction.channel.ask(m => m.author.id != "888657091093487648" && ((!isNaN(new Date(m.content).valueOf()) && today() <= new Date(m.content)) || m.content.replace(" ", "").replace("\n", "") == "취소"), 300000))?.replace("\n", "");
+          await interaction.deleteReply();
+          if (fromDate == undefined || fromDate.replace(" ", "") == "취소") {
+            await interaction.user.schedule(team, project, today());
+            interaction.channel.notice(
+              new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(
+                "업무 생성이 취소되었습니다."
+              ).setFooter(team)
+            );
+          } else {
+            const untilMessage = await interaction.followUp({
+              embeds: [
+                new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(`
+업무 마감일을 입력해주세요.
+예) ${new Date().toString()}
+생성을 취소하고 싶으신 경우 **취소**라고 입력해주세요.
+                `).setAuthor(project).setFooter(team).addFields({
+                  name: "제목",
+                  value: interaction.message.embeds[0].fields[0].value
+                }, {
+                  name: "정보",
+                  value: interaction.message.embeds[0].fields[1].value
+                }, {
+                  name: "담당자",
+                  value: interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "")
+                }, {
+                  name: "시작일",
+                  value: new Date(fromDate).toString()
+                })
+              ]
+            });
+            const untilDate = (await interaction.channel.ask(m => m.author.id != "888657091093487648" && ((!isNaN(new Date(m.content).valueOf()) && new Date(fromDate) <= new Date(m.content)) || m.content.replace(" ", "").replace("\n", "") == "취소"), 300000))?.replace("\n", "");
+            await untilMessage.delete();
+            if (untilDate == undefined || untilDate.replace(" ", "") == "취소") {
+              await interaction.user.schedule(team, project, today());
+              interaction.channel.notice(
+                new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(
+                  "업무 생성이 취소되었습니다."
+                ).setFooter(team)
+              );
+            } else {
+              let url = {};
+              let url2 = {};
+              const memberString = interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "");
+              teams[team].projects[project].tasks.push({
+                "title": interaction.message.embeds[0].fields[0].value,
+                "members": interaction.values,
+                "from": new Date(fromDate).toString(),
+                "until": new Date(untilDate).toString(),
+                "process": 0,
+                "state": "progress",
+                url,
+                url2
+              });
+              for (let manager of teams[team].managers) {
+                const reportMessage = await client.users.cache.get(manager)?.send({
+                  embeds: [
+                    new Discord.MessageEmbed().setTitle("📢 **Task Report**").setAuthor(project).setFooter(team).addFields({
+                      name: "업무",
+                      value: interaction.message.embeds[0].fields[0].value
+                    }, {
+                      name: "담당자",
+                      value: memberString
+                    }, {
+                      name: "보고사항",
+                      value: "아직까지 전송받은 보고사항이 없습니다."
+                    })
+                  ]
+                });
+                if (reportMessage != undefined) {
+                  url[manager] = reportMessage.url;
+                }
+                if (!tabs[manager][team]) {
+                  tabs[manager][team] = {};
+                }
+                const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+                if (oldMessage) {
+                  if (oldMessage.embeds[0].title.startsWith("😃")) {
+                    await oldMessage.delete();
+                    await client.users.cache.get(manager).schedule(team, oldMessage.embeds[0].author.name, today());
+                  } else if (oldMessage.embeds[0].title.startsWith("📈") && oldMessage.embeds[0].author.name == project) {
+                    await oldMessage.delete();
+                    await client.users.cache.get(manager).project(team, project);
+                  }
+                }
+              }
+              for (let worker of interaction.values) {
+                const orderMessage = await client.users.cache.get(worker)?.send({
+                  embeds: [
+                    new Discord.MessageEmbed().setTitle("📞 **Task Order**").setAuthor(project).setFooter(team).addFields({
+                      name: "업무",
+                      value: interaction.message.embeds[0].fields[0].value
+                    }, {
+                      name: "담당자",
+                      value: memberString
+                    }, {
+                      name: "시작일",
+                      value: new Date(fromDate).toString()
+                    }, {
+                      name: "마감일",
+                      value: new Date(untilDate).toString()
+                    }, {
+                      name: "정보",
+                      value: interaction.message.embeds[0].fields[1].value
+                    })
+                  ]
+                });
+                if (orderMessage != undefined) {
+                  url2[worker] = orderMessage.url;
+                }
+                if (!tabs[worker][team]) {
+                  tabs[worker][team] = {};
+                }
+                const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
+                if (oldMessage && oldMessage.embeds[0].title.startsWith("✅")) {
+                  await oldMessage.delete();
+                  await client.users.cache.get(worker).todo(team, today());
+                }
+              }
+              await interaction.user.schedule(team, project, today());
+              interaction.channel.notice(
+                new Discord.MessageEmbed().setTitle("➕ **Add Task**").setDescription(
+                  "업무가 성공적으로 생성되었습니다."
+                ).setFooter(team)
+              );
+            }
+          }
+          break;
+      }
+    } else if (interaction.isButton()) {
+      switch (interaction.customId.slice(interactionToken.length)) {
+        case "deleteProjectO":
+          delete teams[team].projects[project];
+          for (let manager of teams[team].managers) {
+            if (!tabs[manager][team]) {
+              tabs[manager][team] = {};
+            }
+            const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+            if (oldMessage) {
+              console.log(oldMessage);
+              if (oldMessage.embeds[0].title.startsWith("📈")) {
+                await oldMessage.delete();
+                if (oldMessage.embeds[0].author.name == project) {
+                  await client.users.cache.get(manager).project(team, Object.keys(teams[team].projects)[0]);
+                } else {
+                  await client.users.cache.get(manager).project(team, oldMessage.embeds[0].author.name);
+                }
+              } else if (oldMessage.embeds[0].title.startsWith("😃")) {
+                await oldMessage.delete();
+                if (oldMessage.embeds[0].author.name == project) {
+                  await client.users.cache.get(manager).schedule(team, Object.keys(teams[team].projects)[0], today());
+                } else {
+                  await client.users.cache.get(manager).schedule(team, oldMessage.embeds[0].author.name, today());
+                }
+              }
+            }
+          }
+          for (let worker of teams[team].workers) {
+            if (!tabs[worker][team]) {
+              tabs[worker][team] = {};
+            }
+            const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
+            if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.reduce((hasProject, field) => hasProject || field.name.includes(project), false)) {
+              await oldMessage.delete();
+              await client.users.cache.get(manager).todo(team, today());
+            }
+          }
+          await interaction.user.project(team, Object.keys(teams[team].projects)[0]);
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("❌ **Delete Project**").setDescription(
+              "프로젝트가 삭제되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
+        case "deleteProjectX":
+          await interaction.user.project(team, project);
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("❌ **Delete Project**").setDescription(
+              "프로젝트 삭제가 취소되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
+        case "finishProjectO":
+          teams[team].products[project] = {
+            members: [...new Set(teams[team].managers.concat(...teams[team].projects[project].tasks.map(task => task.members)))],
+            from: teams[team].projects[project].from,
+            until: new Date().toString(),
+            description: interaction.message.embeds[0].fields[0].value,
+            state: "private"
+          };
+          delete teams[team].projects[project];
+          for (let manager of teams[team].managers) {
+            if (!tabs[manager][team]) {
+              tabs[manager][team] = {};
+            }
+            const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+            if (oldMessage) {
+              if (oldMessage.embeds[0].title.startsWith("📈")) {
+                await oldMessage.delete();
+                if (oldMessage.embeds[0].author.name == project) {
+                  await client.users.cache.get(manager).project(team, Object.keys(teams[team].projects)[0]);
+                } else {
+                  await client.users.cache.get(manager).project(team, oldMessage.embeds[0].author.name);
+                }
+              } else if (oldMessage.embeds[0].title.startsWith("📦")) {
+                await oldMessage.delete();
+                await client.users.cache.get(manager).product(team, oldMessage.embeds[0].author.name);
+              } else if (oldMessage.embeds[0].title.startsWith("😃")) {
+                await oldMessage.delete();
+                if (oldMessage.embeds[0].author.name == project) {
+                  await client.users.cache.get(manager).schedule(team, Object.keys(teams[team].projects)[0], today());
+                } else {
+                  await client.users.cache.get(manager).schedule(team, oldMessage.embeds[0].author.name, today());
+                }
+              }
+            }
+          }
+          for (let worker of teams[team].workers) {
+            if (!tabs[worker][team]) {
+              tabs[worker][team] = {};
+            }
+            const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
+            if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.reduce((hasProject, field) => hasProject || field.name.includes(project), false)) {
+              await oldMessage.delete();
+              await client.users.cache.get(manager).todo(team, today());
+            }
+          }
+          await interaction.user.product(team, project);
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("✅ **Finish Project**").setDescription(
+              "프로젝트가 등록되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
+        case "finishProjectX":
+          await interaction.user.project(team, project);
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("✅ **Finish Project**").setDescription(
+              "프로젝트 등록이 취소되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
+        case "deleteProductO":
+          delete teams[team].products[project];
+          for (let manager of teams[team].managers) {
+            if (!tabs[manager][team]) {
+              tabs[manager][team] = {};
+            }
+            const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+            if (oldMessage && oldMessage.embeds[0].title.startsWith("📦")) {
+              console.log(oldMessage);
+              await oldMessage.delete();
+              if (oldMessage.embeds[0].author.name == project) {
+                await client.users.cache.get(manager).product(team, Object.keys(teams[team].products)[0]);
+              } else {
+                await client.users.cache.get(manager).product(team, oldMessage.embeds[0].author.name);
+              }
+            }
+          }
+          await interaction.user.product(team, Object.keys(teams[team].products)[0]);
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("❌ **Delete Product**").setDescription(
+              "제품이 삭제되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
+        case "deleteProductX":
+          await interaction.user.product(team, project);
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("❌ **Delete Product**").setDescription(
+              "제품 삭제가 취소되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
+      }
+    }
+  }
+});
+
+client.on("messageCreate", async (message) => {
+  if (message.channel.type == "DM" && message.author.id != "888657091093487648" && message.type == "REPLY") {
+    const replied = await message.channel.messages.fetch(message.reference.messageId);
+    console.log(replied.embeds[0]);
+  }
+  if (message.content.startsWith("!")) {
+    switch (message.content.slice(1)) {
+      case "setup":
+        message.author.project("ALPHA", "대충 존나 쩌는 게임");
+        break;
     }
   }
 });
