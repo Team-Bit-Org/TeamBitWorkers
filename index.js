@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: © 2021 Hyun Jeong Woon <bwelk123@gmail.com>
+//
+// SPDX-License-Identifier: CC-BY-ND-4.0
+// Please contact if you want to create secondary work.
+
 String.prototype.replaceAt = (index, replacement) => this.substr(0, index) + replacement + this.substr(index + replacement.length);
 Date.prototype.toString = function() {
   return `${this.getFullYear().toString().padStart(4, "0").slice(0, 4)}-${(this.getMonth() + 1).toString().padStart(2, "0")}-${this.getDate().toString().padStart(2, "0")}`;
