@@ -1,8 +1,3 @@
-// SPDX-FileCopyrightText: © 2021 Hyun Jeong Woon <bwelk123@gmail.com>
-//
-// SPDX-License-Identifier: CC-BY-ND-4.0
-// Please contact if you want to create secondary work.
-
 String.prototype.replaceAt = (index, replacement) => this.substr(0, index) + replacement + this.substr(index + replacement.length);
 Date.prototype.toString = function() {
   return `${this.getFullYear().toString().padStart(4, "0").slice(0, 4)}-${(this.getMonth() + 1).toString().padStart(2, "0")}-${this.getDate().toString().padStart(2, "0")}`;
@@ -23,11 +18,10 @@ const sampleData = {
     "ALPHA": {
       "password": "alpha",
       "managers": [
-        "386031770216300555",
-        "457908455810924546"
+        "386031770216300555"
       ],
       "workers": [
-        "386031770216300555",
+        "457908455810924546",
       ],
       "projects": {
         "대충 존나 쩌는 게임": {
@@ -43,6 +37,12 @@ const sampleData = {
             },
             "url2": {
               "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
+            },
+            "id": {
+              "386031770216300555": "898476442743107634"
+            },
+            "id2": {
+              "386031770216300555": "898476443896512512"
             }
           }, {
             "title": "그림",
@@ -56,6 +56,12 @@ const sampleData = {
             },
             "url2": {
               "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
+            },
+            "id": {
+              "386031770216300555": "898476442743107634"
+            },
+            "id2": {
+              "386031770216300555": "898476443896512512"
             }
           }],
           "from": "2021-09-07"
@@ -73,6 +79,12 @@ const sampleData = {
             },
             "url2": {
               "386031770216300555": "https://discord.com/channels/@me/888714310195499038/898476443896512512"
+            },
+            "id": {
+              "386031770216300555": "898476442743107634"
+            },
+            "id2": {
+              "386031770216300555": "898476443896512512"
             }
           }],
           "from": "2021-09-07"
@@ -124,8 +136,30 @@ client.on("ready", async () => {
     await client.users.cache.get(user).send("ㅤ");
   }
   channels = client.channels.cache.filter(ch => ch.type == "DM");
-  console.log(await (channels.find(channel => channel.recipient.id == "386031770216300555").messages.fetch("asdf")));
 });
+Discord.User.prototype.oldSend = Discord.User.prototype.send;
+Discord.User.prototype.send = function(message) {
+  return new Promise((resolve, reject) => {
+    this.oldSend(message).then((msg) => {
+      resolve(msg);
+    }).catch((err) => {
+      resolve({
+        id: undefined,
+        deleted: true
+      });
+    });
+  });
+}
+Discord.GuildMember.prototype.oldSend = Discord.GuildMember.prototype.send;
+Discord.GuildMember.prototype.send = function(message) {
+  return new Promise((resolve, reject) => {
+    this.oldSend(message).then((msg) => {
+      resolve(msg);
+    }).catch((err) => {
+      resolve(undefined);
+    });
+  });
+}
 Discord.MessageManager.prototype.oldFetch = Discord.MessageManager.prototype.fetch;
 Discord.MessageManager.prototype.fetch = function(id) {
   if (id) {
@@ -875,6 +909,9 @@ client.on("interactionCreate", async interaction => {
         case "previousTODO":
           interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(-1));
           break;
+        case "todayTODO":
+          interaction.user.todo(team, today());
+          break;
         case "nextTODO":
           interaction.user.todo(team, new Date(interaction.message.embeds[1].description.split("\n")[0]).add(1));
           break;
@@ -946,8 +983,6 @@ client.on("interactionCreate", async interaction => {
                 ).setFooter(team)
               );
             } else {
-              let url = {};
-              let url2 = {};
               const memberString = interaction.values.reduce((string, worker) => string + `<@!${worker}>` + "\n", "");
               teams[team].projects[project].tasks.push({
                 "title": interaction.message.embeds[0].fields[0].value,
@@ -956,8 +991,10 @@ client.on("interactionCreate", async interaction => {
                 "until": new Date(untilDate).toString(),
                 "process": 0,
                 "state": "progress",
-                url,
-                url2
+                "url": {},
+                "url2": {},
+                "id": {},
+                "id2": {}
               });
               for (let manager of teams[team].managers) {
                 const reportMessage = await client.users.cache.get(manager)?.send({
@@ -974,8 +1011,9 @@ client.on("interactionCreate", async interaction => {
                     })
                   ]
                 });
-                if (reportMessage != undefined) {
-                  url[manager] = reportMessage.url;
+                if (reportMessage != undefined && (reportMessage instanceof Discord.Message)) {
+                  teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url[manager] = reportMessage.url;
+                  teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id[manager] = reportMessage.id;
                 }
                 if (!tabs[manager][team]) {
                   tabs[manager][team] = {};
@@ -1012,8 +1050,9 @@ client.on("interactionCreate", async interaction => {
                     })
                   ]
                 });
-                if (orderMessage != undefined) {
-                  url2[worker] = orderMessage.url;
+                if (orderMessage != undefined && (orderMessage instanceof Discord.Message)) {
+                  teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url2[worker] = orderMessage.url;
+                  teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id2[worker] = orderMessage.id;
                 }
                 if (!tabs[worker][team]) {
                   tabs[worker][team] = {};
@@ -1044,7 +1083,6 @@ client.on("interactionCreate", async interaction => {
             }
             const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
             if (oldMessage) {
-              console.log(oldMessage);
               if (oldMessage.embeds[0].title.startsWith("📈")) {
                 await oldMessage.delete();
                 if (oldMessage.embeds[0].author.name == project) {
@@ -1067,7 +1105,7 @@ client.on("interactionCreate", async interaction => {
               tabs[worker][team] = {};
             }
             const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
-            if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.reduce((hasProject, field) => hasProject || field.name.includes(project), false)) {
+            if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.some(field => field.name.includes(project))) {
               await oldMessage.delete();
               await client.users.cache.get(manager).todo(team, today());
             }
@@ -1127,7 +1165,7 @@ client.on("interactionCreate", async interaction => {
               tabs[worker][team] = {};
             }
             const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
-            if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.reduce((hasProject, field) => hasProject || field.name.includes(project), false)) {
+            if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.some(field => field.name.includes(project))) {
               await oldMessage.delete();
               await client.users.cache.get(manager).todo(team, today());
             }
@@ -1155,7 +1193,6 @@ client.on("interactionCreate", async interaction => {
             }
             const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
             if (oldMessage && oldMessage.embeds[0].title.startsWith("📦")) {
-              console.log(oldMessage);
               await oldMessage.delete();
               if (oldMessage.embeds[0].author.name == project) {
                 await client.users.cache.get(manager).product(team, Object.keys(teams[team].products)[0]);
@@ -1187,12 +1224,53 @@ client.on("interactionCreate", async interaction => {
 client.on("messageCreate", async (message) => {
   if (message.channel.type == "DM" && message.author.id != "888657091093487648" && message.type == "REPLY") {
     const replied = await message.channel.messages.fetch(message.reference.messageId);
-    console.log(replied.embeds[0]);
-  }
-  if (message.content.startsWith("!")) {
+    if (replied && replied.embeds) {
+      const team = replied.embeds[0].footer.text;
+      const project = replied.embeds[0].author.name;
+      if (replied.embeds[0].title.startsWith("📢")) {
+        const currentTask = teams[team].projects[project].tasks.find(task => task.id[message.author.id] == replied.id);
+        currentTask.description = message.content;
+        for (let worker of currentTask.members) {
+          const orderMessage = await client.users.cache.get(worker)?.send({
+            embeds: [
+              new Discord.MessageEmbed().setTitle("📞 **Task Order**").setAuthor(project).setFooter(team).addFields({
+                name: "업무",
+                value: currentTask.title
+              }, {
+                name: "담당자",
+                value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, "")
+              }, {
+                name: "시작일",
+                value: currentTask.from
+              }, {
+                name: "마감일",
+                value: currentTask.until
+              }, {
+                name: "정보",
+                value: message.content
+              }).setDescription(`[⏮️](${currentTask.url2[message.author.id]})`)
+            ]
+          });
+          if (orderMessage != undefined && (orderMessage instanceof Discord.Message)) {
+            const oldMessage = await orderMessage.channel.messages.fetch(currentTask.id2[message.author.id]);
+            oldMessage?.edit({
+              embeds: [
+                oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${orderMessage.url})`)
+              ]
+            });
+            teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url2[worker] = orderMessage.url;
+            teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id2[worker] = orderMessage.id;
+          }
+        }
+      }
+    }
+  } else if (message.content.startsWith("!")) {
     switch (message.content.slice(1)) {
       case "setup":
         message.author.project("ALPHA", "대충 존나 쩌는 게임");
+        break;
+      case "setup2":
+        message.author.todo("ALPHA", today());
         break;
     }
   }
