@@ -1034,13 +1034,15 @@ client.on("interactionCreate", async interaction => {
                   embeds: [
                     new Discord.MessageEmbed().setTitle("📞 **Task Order**").setAuthor(project).setFooter(team).addFields({
                       name: "업무",
-                      value: interaction.message.embeds[0].fields[0].value
+                      value: interaction.message.embeds[0].fields[0].value,
+                      inline: true
                     }, {
                       name: "담당자",
                       value: memberString
                     }, {
                       name: "시작일",
-                      value: new Date(fromDate).toString()
+                      value: new Date(fromDate).toString(),
+                      inline: true
                     }, {
                       name: "마감일",
                       value: new Date(untilDate).toString()
@@ -1235,24 +1237,26 @@ client.on("messageCreate", async (message) => {
             embeds: [
               new Discord.MessageEmbed().setTitle("📞 **Task Order**").setAuthor(project).setFooter(team).addFields({
                 name: "업무",
-                value: currentTask.title
+                value: currentTask.title,
+                inline: true
               }, {
-                name: "담당자",
+                name: "파트너",
                 value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, "")
               }, {
                 name: "시작일",
-                value: currentTask.from
+                value: currentTask.from,
+                inline: true
               }, {
                 name: "마감일",
                 value: currentTask.until
               }, {
                 name: "정보",
                 value: message.content
-              }).setDescription(`[⏮️](${currentTask.url2[message.author.id]})`)
+              }).setDescription(`[⏮️](${currentTask.url2[worker]})`)
             ]
           });
           if (orderMessage != undefined && (orderMessage instanceof Discord.Message)) {
-            const oldMessage = await orderMessage.channel.messages.fetch(currentTask.id2[message.author.id]);
+            const oldMessage = await (channels.find(channel => channel.recipient.id == worker).messages.fetch(currentTask.id2[worker]));
             oldMessage?.edit({
               embeds: [
                 oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${orderMessage.url})`)
@@ -1260,6 +1264,35 @@ client.on("messageCreate", async (message) => {
             });
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url2[worker] = orderMessage.url;
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id2[worker] = orderMessage.id;
+          }
+        }
+      } else if (replied.embeds[0].title.startsWith("📞")) {
+        const currentTask = teams[team].projects[project].tasks.find(task => task.id2[message.author.id] == replied.id);
+        currentTask.report = message.content;
+        for (let manager of teams[team].managers) {
+          const reportMessage = await client.users.cache.get(manager)?.send({
+            embeds: [
+              new Discord.MessageEmbed().setTitle("📢 **Task Report**").setAuthor(project).setFooter(team).addFields({
+                name: "업무",
+                value: currentTask.title
+              }, {
+                name: "담당자",
+                value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, "")
+              }, {
+                name: "보고사항",
+                value: message.content
+              }).setDescription(`[⏮️](${currentTask.url[manager]})`)
+            ]
+          });
+          if (reportMessage != undefined && (reportMessage instanceof Discord.Message)) {
+            const oldMessage = await (channels.find(channel => channel.recipient.id == manager).messages.fetch(currentTask.id[manager]));
+            oldMessage?.edit({
+              embeds: [
+                oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${reportMessage.url})`)
+              ]
+            });
+            teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url[manager] = reportMessage.url;
+            teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id[manager] = reportMessage.id;
           }
         }
       }
