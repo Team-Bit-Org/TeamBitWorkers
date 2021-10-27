@@ -192,7 +192,11 @@ Discord.Channel.prototype.ask = function(filter, time) {
       });
       collector.on("collect", async m => {
         collector.stop();
-        resolve(m.content);
+        if (m.content == "") {
+          resolve(undefined);
+        } else {
+          resolve(m.content);
+        }
       });
       collector.on("end", async collected => {
         if (collected.size == 0) {
@@ -1251,16 +1255,18 @@ client.on("messageCreate", async (message) => {
                 value: currentTask.until
               }, {
                 name: "정보",
-                value: message.content
+                value: message.content == "" ? "[FILE]" : message.content
               }).setDescription(`[⏮️](${currentTask.url2[worker]})`)
-            ]
+            ],
+            files: message.attachments.map(attachment => attachment.attachment)
           });
           if (orderMessage != undefined && (orderMessage instanceof Discord.Message)) {
             const oldMessage = await (channels.find(channel => channel.recipient.id == worker).messages.fetch(currentTask.id2[worker]));
             oldMessage?.edit({
               embeds: [
                 oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${orderMessage.url})`)
-              ]
+              ],
+              files: oldMessage.files
             });
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url2[worker] = orderMessage.url;
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id2[worker] = orderMessage.id;
@@ -1269,6 +1275,7 @@ client.on("messageCreate", async (message) => {
       } else if (replied.embeds[0].title.startsWith("📞")) {
         const currentTask = teams[team].projects[project].tasks.find(task => task.id2[message.author.id] == replied.id);
         currentTask.report = message.content;
+        console.log(message.attachments);
         for (let manager of teams[team].managers) {
           const reportMessage = await client.users.cache.get(manager)?.send({
             embeds: [
@@ -1280,16 +1287,18 @@ client.on("messageCreate", async (message) => {
                 value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, "")
               }, {
                 name: "보고사항",
-                value: message.content
+                value: message.content == "" ? "[FILE]" : message.content
               }).setDescription(`[⏮️](${currentTask.url[manager]})`)
-            ]
+            ],
+            files: message.attachments.map(attachment => attachment.attachment)
           });
           if (reportMessage != undefined && (reportMessage instanceof Discord.Message)) {
             const oldMessage = await (channels.find(channel => channel.recipient.id == manager).messages.fetch(currentTask.id[manager]));
             oldMessage?.edit({
               embeds: [
                 oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${reportMessage.url})`)
-              ]
+              ],
+              files: oldMessage.files
             });
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url[manager] = reportMessage.url;
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id[manager] = reportMessage.id;
