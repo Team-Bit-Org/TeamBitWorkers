@@ -585,10 +585,10 @@ Discord.GuildMember.prototype.todo = async function(team, currentDate) {
   }
   tabs[this.id][team].workerUI = (await this.send({
     embeds: [
-      new Discord.MessageEmbed().setTitle("✅ **TODO**").setFooter(team).addFields(...myTasks.filter(task => task.from <= new Date().toString()).map(task => ({
+      new Discord.MessageEmbed().setTitle("✅ **TODAY**").setFooter(team).addFields(...myTasks.filter(task => task.from <= new Date().toString()).map(task => ({
         name: `${task.project} - ${task.title}`,
         value: `
-${STATEEMOJI[task.state]} **${task.process}%**
+[${STATEEMOJI[task.state]} **${task.process}%**](${task.url2[this.id]})
 *${task.from} ~ ${task.until}*
 ${task.description ?? "정보 없음"}
         `
@@ -1275,7 +1275,6 @@ client.on("messageCreate", async (message) => {
       } else if (replied.embeds[0].title.startsWith("📞")) {
         const currentTask = teams[team].projects[project].tasks.find(task => task.id2[message.author.id] == replied.id);
         currentTask.report = message.content;
-        console.log(message.attachments);
         for (let manager of teams[team].managers) {
           const reportMessage = await client.users.cache.get(manager)?.send({
             embeds: [
