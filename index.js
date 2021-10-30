@@ -642,11 +642,31 @@ ${dateRange.reduce((string, date) => string + emojis["d" + date.getDate()], "")}
 Discord.User.prototype.todo = Discord.GuildMember.prototype.todo;
 
 client.on("interactionCreate", async interaction => {
+  const team = interaction.message.embeds[0].footer.text;
+  const project = interaction.message.embeds[0].author?.name;
+  if (interaction.customId == "deleteTask") {
+    const currentTask = teams[team].projects[project]?.tasks.find(task => task.id[interaction.user.id] == interaction.message.id);
+    if (currentTask) {
+      interaction.reply({
+        embeds: [
+          new Discord.MessageEmbed().setTitle("❌ **Delete Task**").setDescription(`
+**${currentTask.title}** 업무를 정말로 삭제하시겠습니까?
+||${currentTask.id[interaction.user.id]}||
+          `).setAuthor(project).setFooter(team)
+        ],
+        components: [
+          new Discord.MessageActionRow().addComponents(
+            new Discord.MessageButton().setCustomId(interactionToken + "deleteTaskO").setLabel("❌DELETE").setStyle("DANGER"),
+            new Discord.MessageButton().setCustomId(interactionToken + "deleteTaskX").setLabel("🚫CANCEL").setStyle("SECONDARY")
+          )
+        ]
+      });
+    }
+    return;
+  }
   if (!interaction.message.deleted) {
     await interaction.message.delete();
   }
-  const team = interaction.message.embeds[0].footer.text;
-  const project = interaction.message.embeds[0].author?.name;
   if (!interaction.customId.startsWith(interactionToken)) {
     if (interaction.isSelectMenu()) {
       switch (interaction.customId) {
@@ -1005,14 +1025,21 @@ client.on("interactionCreate", async interaction => {
                   embeds: [
                     new Discord.MessageEmbed().setTitle("📢 **Task Report**").setAuthor(project).setFooter(team).addFields({
                       name: "업무",
-                      value: interaction.message.embeds[0].fields[0].value
+                      value: interaction.message.embeds[0].fields[0].value,
+                      inline: true
                     }, {
                       name: "담당자",
-                      value: memberString
+                      value: memberString,
+                      inline: true
                     }, {
                       name: "보고사항",
                       value: "아직까지 전송받은 보고사항이 없습니다."
                     })
+                  ],
+                  components: [
+                    new Discord.MessageActionRow().addComponents(
+                      new Discord.MessageButton().setCustomId("deleteTask").setLabel("❌").setStyle("DANGER")
+                    )
                   ]
                 });
                 if (reportMessage != undefined && (reportMessage instanceof Discord.Message)) {
@@ -1042,14 +1069,19 @@ client.on("interactionCreate", async interaction => {
                       inline: true
                     }, {
                       name: "담당자",
-                      value: memberString
+                      value: memberString,
+                      inline: true
+                    }, {
+                      name: "ㅤ",
+                      value: "ㅤ"
                     }, {
                       name: "시작일",
                       value: new Date(fromDate).toString(),
                       inline: true
                     }, {
                       name: "마감일",
-                      value: new Date(untilDate).toString()
+                      value: new Date(untilDate).toString(),
+                      inline: true
                     }, {
                       name: "정보",
                       value: interaction.message.embeds[0].fields[1].value
@@ -1113,7 +1145,7 @@ client.on("interactionCreate", async interaction => {
             const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
             if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.some(field => field.name.includes(project))) {
               await oldMessage.delete();
-              await client.users.cache.get(manager).todo(team, today());
+              await client.users.cache.get(worker).todo(team, today());
             }
           }
           await interaction.user.project(team, Object.keys(teams[team].projects)[0]);
@@ -1173,7 +1205,7 @@ client.on("interactionCreate", async interaction => {
             const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
             if (oldMessage && oldMessage.embeds[0].title.startsWith("✅") && oldMessage.embeds[0].fields.some(field => field.name.includes(project))) {
               await oldMessage.delete();
-              await client.users.cache.get(manager).todo(team, today());
+              await client.users.cache.get(worker).todo(team, today());
             }
           }
           await interaction.user.product(team, project);
@@ -1222,6 +1254,52 @@ client.on("interactionCreate", async interaction => {
             ).setFooter(team).setAuthor(project)
           );
           break;
+        case "deleteTaskO":
+          if (teams[team].projects[project]) {
+            const id = interaction.message.embeds[0].description.split("\n")[1].slice(2, -2);
+            const currentTask = teams[team].projects[project].tasks.find(task => task.id[interaction.user.id] == id);
+            if (currentTask) {
+              teams[team].projects[project].tasks = teams[team].projects[project].tasks.filter(task => task.id[interaction.user.id] != id);
+              for (let manager of teams[team].managers) {
+                if (!tabs[manager][team]) {
+                  tabs[manager][team] = {};
+                }
+                const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+                if (oldMessage) {
+                  if (oldMessage.embeds[0].title.startsWith("📈") && oldMessage.embeds[0].author.name == project) {
+                    await oldMessage.delete();
+                    await client.users.cache.get(manager).project(team, project);
+                  } else if (oldMessage.embeds[0].title.startsWith("😃")) {
+                    await oldMessage.delete();
+                    await client.users.cache.get(manager).schedule(team, project, today());
+                  }
+                }
+              }
+              for (let worker of currentTask.members) {
+                if (!tabs[worker][team]) {
+                  tabs[worker][team] = {};
+                }
+                const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
+                if (oldMessage && oldMessage.embeds[0].title.startsWith("✅")) {
+                  await oldMessage.delete();
+                  await client.users.cache.get(worker).todo(team, today());
+                }
+              }
+              interaction.channel.notice(
+                new Discord.MessageEmbed().setTitle("❌ **Delete Task**").setDescription(
+                  "업무가 삭제되었습니다"
+                ).setFooter(team).setAuthor(project)
+              );
+            }
+          }
+          break;
+        case "deleteTaskX":
+          interaction.channel.notice(
+            new Discord.MessageEmbed().setTitle("❌ **Delete Task**").setDescription(
+              "업무 삭제가 취소되었습니다."
+            ).setFooter(team).setAuthor(project)
+          );
+          break;
       }
     }
   }
@@ -1245,17 +1323,23 @@ client.on("messageCreate", async (message) => {
                 inline: true
               }, {
                 name: "파트너",
-                value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, "")
+                value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, ""),
+                inline: true
+              }, {
+                name: "ㅤ",
+                value: "ㅤ"
               }, {
                 name: "시작일",
                 value: currentTask.from,
                 inline: true
               }, {
                 name: "마감일",
-                value: currentTask.until
+                value: currentTask.until,
+                inline: true
               }, {
                 name: "정보",
-                value: message.content == "" ? "[FILE]" : message.content
+                value: message.content == "" ? "[FILE]" : message.content,
+                inline: true
               }).setDescription(`[⏮️](${currentTask.url2[worker]})`)
             ],
             files: message.attachments.map(attachment => attachment.attachment)
@@ -1266,12 +1350,18 @@ client.on("messageCreate", async (message) => {
               embeds: [
                 oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${orderMessage.url})`)
               ],
-              files: oldMessage.files
+              files: oldMessage.files,
+              components: []
             });
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url2[worker] = orderMessage.url;
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id2[worker] = orderMessage.id;
           }
         }
+        message.channel.notice(
+          new Discord.MessageEmbed().setTitle("📞 **Task Order**").setDescription(
+            "업무 명령이 등록되었습니다."
+          ).setFooter(team).setAuthor(project)
+        );
       } else if (replied.embeds[0].title.startsWith("📞")) {
         const currentTask = teams[team].projects[project].tasks.find(task => task.id2[message.author.id] == replied.id);
         currentTask.report = message.content;
@@ -1280,16 +1370,23 @@ client.on("messageCreate", async (message) => {
             embeds: [
               new Discord.MessageEmbed().setTitle("📢 **Task Report**").setAuthor(project).setFooter(team).addFields({
                 name: "업무",
-                value: currentTask.title
+                value: currentTask.title,
+                inline: true
               }, {
                 name: "담당자",
-                value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, "")
+                value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, ""),
+                inline: true
               }, {
                 name: "보고사항",
                 value: message.content == "" ? "[FILE]" : message.content
               }).setDescription(`[⏮️](${currentTask.url[manager]})`)
             ],
-            files: message.attachments.map(attachment => attachment.attachment)
+            files: message.attachments.map(attachment => attachment.attachment),
+            components: [
+              new Discord.MessageActionRow().addComponents(
+                new Discord.MessageButton().setCustomId("deleteTask").setLabel("❌").setStyle("DANGER")
+              )
+            ]
           });
           if (reportMessage != undefined && (reportMessage instanceof Discord.Message)) {
             const oldMessage = await (channels.find(channel => channel.recipient.id == manager).messages.fetch(currentTask.id[manager]));
@@ -1297,12 +1394,18 @@ client.on("messageCreate", async (message) => {
               embeds: [
                 oldMessage.embeds[0].setDescription((oldMessage.embeds[0].description ? oldMessage.embeds[0].description + emojis.s8 : "") + `[⏭️](${reportMessage.url})`)
               ],
-              files: oldMessage.files
+              files: oldMessage.files,
+              components: []
             });
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].url[manager] = reportMessage.url;
             teams[team].projects[project].tasks[teams[team].projects[project].tasks.length - 1].id[manager] = reportMessage.id;
           }
         }
+        message.channel.notice(
+          new Discord.MessageEmbed().setTitle("📢 **Task Report**").setDescription(
+            "업무 보고가 등록되었습니다."
+          ).setFooter(team).setAuthor(project)
+        );
       }
     }
   } else if (message.content.startsWith("!")) {
