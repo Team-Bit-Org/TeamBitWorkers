@@ -286,11 +286,11 @@ Discord.GuildMember.prototype.project = async function(team, project) {
           value: (startDay <= today()) ? new Date(new Date(startDay.toString()).setDate(startDay.getDate() + Math.ceil((((today() - startDay + 86400000) * 100 / progress) - 86400000) / 86400000))).toString() : "계산 불가"
         }).setAuthor(project).setFooter(team),
         new Discord.MessageEmbed().setTitle(`📝 **PROJECTS**`).addFields({
-          name: "🔵 진행중",
+          name: "🔵 진행 중",
           value: currentProject.tasks.filter(task => task.state == "progress").length.toString(),
           inline: true
         }, {
-          name: "🟡 대기중",
+          name: "🟡 대기 중",
           value: currentProject.tasks.filter(task => task.state == "wait").length.toString(),
           inline: true
         }, {
@@ -661,6 +661,60 @@ client.on("interactionCreate", async interaction => {
           )
         ]
       });
+    }
+    return;
+  } else if (interaction.customId == "stateProgress") {
+    const currentTask = teams[team].projects[project]?.tasks.find(task => task.id2[interaction.user.id] == interaction.message.id);
+    if (currentTask) {
+      currentTask.state = interaction.values[0];
+      interaction.reply({
+        embeds: [
+          new Discord.MessageEmbed().setTitle("⏰ **State & Progress**").setDescription(
+            "진행도를 입력해주세요. (0 ~ 100)\n그대로 유지하고 싶으신 경우 **취소**라고 입력해주세요."
+          ).setAuthor(project).setFooter(team)
+        ]
+      });
+      processInput = (await interaction.channel.ask(m => m.author.id != "888657091093487648" && ((!isNaN(Number(m.content)) && Number(m.content) <= 100 && 0 <= Number(m.content), 30000) || m.content.replace("\n", "").replace(" ", "") == "취소"), 30000))?.replace("\n", "");
+      await interaction.deleteReply();
+      if (processInput == undefined || processInput.replace(" ", "") == "취소") {
+        interaction.channel.notice(
+          new Discord.MessageEmbed().setTitle("⏰ **State & Progress**").setDescription(
+            "상태가 수정되었습니다."
+          ).setFooter(team).setAuthor(project)
+        );
+      } else {
+        currentTask.process = Number(processInput);
+        interaction.channel.notice(
+          new Discord.MessageEmbed().setTitle("⏰ **State & Progress**").setDescription(
+            "상태와 진행도가 수정되었습니다."
+          ).setFooter(team).setAuthor(project)
+        );
+      }
+      for (let manager of teams[team].managers) {
+        if (!tabs[manager][team]) {
+          tabs[manager][team] = {};
+        }
+        const oldMessage = await (channels.find(ch => ch.recipient.id == manager).messages.fetch(tabs[manager][team].managerUI));
+        if (oldMessage) {
+          if (oldMessage.embeds[0].title.startsWith("📈") && oldMessage.embeds[0].author.name == project) {
+            await oldMessage.delete();
+            await client.users.cache.get(manager).project(team, project);
+          } else if (oldMessage.embeds[0].title.startsWith("😃")) {
+            await oldMessage.delete();
+            await client.users.cache.get(manager).schedule(team, oldMessage.embeds[0].author.name, today());
+          }
+        }
+      }
+      for (let worker of currentTask.members) {
+        if (!tabs[worker][team]) {
+          tabs[worker][team] = {};
+        }
+        const oldMessage = await (channels.find(ch => ch.recipient.id == worker).messages.fetch(tabs[worker][team].workerUI));
+        if (oldMessage && oldMessage.embeds[0].title.startsWith("✅")) {
+          await oldMessage.delete();
+          await client.users.cache.get(worker).todo(team, today());
+        }
+      }
     }
     return;
   }
@@ -1072,20 +1126,29 @@ client.on("interactionCreate", async interaction => {
                       value: memberString,
                       inline: true
                     }, {
-                      name: "ㅤ",
-                      value: "ㅤ"
-                    }, {
                       name: "시작일",
-                      value: new Date(fromDate).toString(),
-                      inline: true
+                      value: new Date(fromDate).toString()
                     }, {
                       name: "마감일",
-                      value: new Date(untilDate).toString(),
-                      inline: true
+                      value: new Date(untilDate).toString()
                     }, {
                       name: "정보",
                       value: interaction.message.embeds[0].fields[1].value
                     })
+                  ],
+                  components: [
+                    new Discord.MessageActionRow().addComponents(
+                      new Discord.MessageSelectMenu().setCustomId("stateProgress").setPlaceholder("⏰ STATE & PROCESS").addOptions({
+                        label: "🔵진행 중",
+                        value: "progress"
+                      }, {
+                        label: "🟡대기 중",
+                        value: "wait"
+                      }, {
+                        label: "🔴문제 생김",
+                        value: "issue"
+                      })
+                    )
                   ]
                 });
                 if (orderMessage != undefined && (orderMessage instanceof Discord.Message)) {
@@ -1271,7 +1334,7 @@ client.on("interactionCreate", async interaction => {
                     await client.users.cache.get(manager).project(team, project);
                   } else if (oldMessage.embeds[0].title.startsWith("😃")) {
                     await oldMessage.delete();
-                    await client.users.cache.get(manager).schedule(team, project, today());
+                    await client.users.cache.get(manager).schedule(team, oldMessage.embeds[0].author.name, today());
                   }
                 }
               }
@@ -1326,23 +1389,32 @@ client.on("messageCreate", async (message) => {
                 value: currentTask.members.reduce((string, task) => string + `<@!${task}> `, ""),
                 inline: true
               }, {
-                name: "ㅤ",
-                value: "ㅤ"
-              }, {
                 name: "시작일",
-                value: currentTask.from,
-                inline: true
+                value: currentTask.from
               }, {
                 name: "마감일",
-                value: currentTask.until,
-                inline: true
+                value: currentTask.until
               }, {
                 name: "정보",
                 value: message.content == "" ? "[FILE]" : message.content,
                 inline: true
               }).setDescription(`[⏮️](${currentTask.url2[worker]})`)
             ],
-            files: message.attachments.map(attachment => attachment.attachment)
+            files: message.attachments.map(attachment => attachment.attachment),
+            components: [
+              new Discord.MessageActionRow().addComponents(
+                new Discord.MessageSelectMenu().setCustomId("stateProgress").setPlaceholder("⏰ STATE & PROCESS").addOptions({
+                  label: "🔵진행 중",
+                  value: "progress"
+                }, {
+                  label: "🟡대기 중",
+                  value: "wait"
+                }, {
+                  label: "🔴문제 생김",
+                  value: "issue"
+                })
+              )
+            ]
           });
           if (orderMessage != undefined && (orderMessage instanceof Discord.Message)) {
             const oldMessage = await (channels.find(channel => channel.recipient.id == worker).messages.fetch(currentTask.id2[worker]));
